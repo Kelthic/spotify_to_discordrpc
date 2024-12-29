@@ -8,25 +8,32 @@ import os
 import shutil
 
 # Функция для создания бэкапа лог-файла
-def backup_log_file(log_filename):
+def backup_log_file(log_filename, max_backups=9):
     if os.path.exists(log_filename):
-        # Проверим, существует ли уже бэкап
-        for i in range(1, 10):
-            backup_filename = f"{log_filename}.backup_{i}"
-            if not os.path.exists(backup_filename):
-                shutil.copy(log_filename, backup_filename)  # Копируем лог в бэкап
-                print(f"Бэкап создан: {backup_filename}")
-                return
-        # Если все бэкапы с цифрами 1-9 существуют, перезапишем последний
-        shutil.copy(log_filename, f"{log_filename}.backup_9")
-        print("Все бэкапы существуют, последний перезаписан.")
+        # Находим первый доступный номер для перезаписи
+        oldest_backup = 1
+        if all(os.path.exists(f"{log_filename}.backup_{i}") for i in range(1, max_backups + 1)):
+            # Если все бэкапы существуют, начинаем перезапись с самого первого
+            oldest_backup = 1
+        else:
+            # Находим первый отсутствующий бэкап
+            for i in range(1, max_backups + 1):
+                if not os.path.exists(f"{log_filename}.backup_{i}"):
+                    oldest_backup = i
+                    break
+
+        # Создаём или перезаписываем бэкап
+        backup_filename = f"{log_filename}.backup_{oldest_backup}"
+        shutil.copy(log_filename, backup_filename)
+        print(f"Бэкап создан: {backup_filename}")
+
 
 # Функция для очистки и создания бэкапа лог-файла
 def reset_log(log_filename):
     if os.path.exists(log_filename):
-        backup_log_file(log_filename)  # Создаем бэкап перед очисткой
+        backup_log_file(log_filename)
         with open(log_filename, 'w'):
-            pass  # Очистить файл
+            pass
 
 # Создаём папку для логов, если её нет
 log_dir = './logs'
@@ -73,7 +80,7 @@ def get_album_cover_url(track):
     """Получает URL обложки альбома."""
     images = track['album']['images']
     if images:
-        return images[0]['url']  # Самое большое изображение
+        return images[0]['url']
     return None
 
 def update_discord_presence(track, playback):
@@ -93,11 +100,11 @@ def update_discord_presence(track, playback):
 
     # Обновление активности
     rpc.update(
-        state=f"📜Title: {track_name}",
-        details=f"🗣Artist: {artist_name}",
-        buttons=[  # Здесь передаем кнопки в формате JSON
-            {"label": "🎧 Listen in Spotify", "url": track_url},
-            {"label": "🌐 Author", "url": github_url}
+        state=f"\ud83d\udd1cTitle: {track_name}",
+        details=f"\ud83d\udc68Artist: {artist_name}",
+        buttons=[
+            {"label": "\ud83c\udfa7 Listen in Spotify", "url": track_url},
+            {"label": "\ud83c\udf10 Author", "url": github_url}
         ],
         large_image=cover_url,
         large_text=f"{artist_name} - {track_name}",
@@ -109,6 +116,7 @@ def update_discord_presence(track, playback):
 
 # Основной цикл
 last_track_id = None
+nothing_playing_logged = False  # Флаг для разового сообщения
 try:
     reset_log(log_filename)  # Очистка и создание бэкапа при запуске программы
 
@@ -122,11 +130,14 @@ try:
                 if current_track_id != last_track_id:  # Проверяем смену трека
                     update_discord_presence(current_track, playback)
                     last_track_id = current_track_id
+                    nothing_playing_logged = False  # Сбрасываем флаг
             else:
                 rpc.clear()
                 last_track_id = None
-                logger.info("Ничего не играет")
-                print("Ничего не играет")
+                if not nothing_playing_logged:
+                    logger.info("Ничего не играет")
+                    print("Ничего не играет")
+                    nothing_playing_logged = True
         except Exception as e:
             logger.error(f"Ошибка: {e}", exc_info=True)
 
